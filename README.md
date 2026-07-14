@@ -5,6 +5,34 @@ Drop in images + an audio file, get a polished vertical video with beat-synced t
 
 ---
 
+## 🛠️ Prerequisites & Setup
+
+If you want to run this project on another computer, you need to ensure the following prerequisites are installed:
+
+### 1. System Dependencies
+* **Node.js**: (v18 or higher recommended)
+* **Python**: (v3.8 or higher)
+* **FFmpeg**: Required by Remotion for video rendering and audio synchronization. Make sure it is added to your system's PATH.
+
+### 2. Python Setup
+The AI beat detector uses `librosa`, `numpy`, and `scipy` for audio transient analysis. Install them by running:
+```bash
+pip install librosa numpy scipy
+```
+
+### 3. Installation
+1. Clone the repository.
+2. Navigate into the project folder:
+   ```bash
+   cd "model2 copy/reel-project"
+   ```
+3. Install the NPM dependencies:
+   ```bash
+   npm install
+   ```
+
+---
+
 ## Folder Structure
 
 ```

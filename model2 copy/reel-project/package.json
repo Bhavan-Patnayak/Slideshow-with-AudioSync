@@ -8,12 +8,14 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "studio": "node scan-images.mjs && remotion preview src/main.tsx",
-    "render-reel": "node scan-images.mjs && remotion render src/main.tsx AutomatedReel out/final_reel.mp4 --props=props.json"
+    "render-reel": "node scan-images.mjs && remotion render src/main.tsx AutomatedReel out/final_reel.mp4 --props=props.json",
+    "render-and-trim": "npm run render-reel && node scripts/trim-to-audio.js out/final_reel.mp4 public/sample_1.mp3 out/final_reel_trimmed.mp4"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.470",
-    "@remotion/media-utils": "^4.0.470",
+    "@remotion/media-utils": "^4.0.489",
     "@remotion/player": "^4.0.470",
+    "ffprobe": "^1.1.2",
     "image-size": "^2.0.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

@@ -22,7 +22,6 @@ for (const file of files) {
   try {
     const filePath = path.join(publicDir, file);
 
-    // FIX: Read the file into a raw Node Buffer first to bypass TextDecoder bugs in Node v24
     const buffer = fs.readFileSync(filePath);
     const dimensions = sizeOf(buffer);
 
@@ -59,44 +58,79 @@ if (audioFiles.length > 0) {
   audioFile = audioFiles[0];
 }
 
-// Run beat detection if audio file exists
 if (audioFile) {
   try {
     console.log(`🎵 Running beat detection on public/${audioFile}...`);
+    
     const pythonScript = path.resolve('../../Git-2/beat-detection/detect_beats.py');
     const tempBeatsFile = path.resolve('./src/beats_temp.txt');
     const tempEdlFile = path.resolve('./src/markers_temp.edl');
     const fullAudioPath = path.resolve(path.join(publicDir, audioFile));
 
-    // Run the python script
-    execSync(`python "${pythonScript}" "${fullAudioPath}" --out "${tempBeatsFile}" --edl "${tempEdlFile}" --fps 24`, { stdio: 'inherit' });
+    execSync(`python "${pythonScript}" "${fullAudioPath}" --out "${tempBeatsFile}" --edl "${tempEdlFile}" --fps 24 --min-gap 2.0`, { stdio: 'inherit' });
 
-    // Read output
     if (fs.existsSync(tempBeatsFile)) {
       const content = fs.readFileSync(tempBeatsFile, 'utf8');
-      const seconds = content.trim().split('\n').map(line => parseFloat(line)).filter(n => !isNaN(n));
+      const rawSeconds = content.trim().split('\n').map(line => parseFloat(line)).filter(n => !isNaN(n));
 
-      // Convert seconds to frames (at 24 FPS as configured in main.tsx)
       const fps = 24;
-      const TRANSITION_FRAMES = 36; // wipe animation duration in Reel.tsx
-      // Shift each beat back by TRANSITION_FRAMES so the wipe ENDS on the beat, not starts there
-      const beatFrames = seconds.map(s => Math.max(TRANSITION_FRAMES, Math.round(s * fps) - TRANSITION_FRAMES));
+      const MAX_GAP_SECONDS = 3.0; 
+      
+      const correctedSeconds = [];
+const MIN_GAP_SECONDS = 2.0; // 🛑 Strict 2-second minimum
+        let lastTimestamp = 0.0;
 
-      // Write src/beats.ts
+        for (let i = 0; i < rawSeconds.length; i++) {
+          let currentTimestamp = rawSeconds[i];
+          let gap = currentTimestamp - lastTimestamp;
+
+          // 🛑 1. ENFORCER RESTORED: If the beat is faster than 2.0s, ignore it!
+          if (gap < MIN_GAP_SECONDS) continue; 
+
+          // 2. If the gap is massive, split it up nicely into 2.5s chunks.
+          if (gap > MAX_GAP_SECONDS) {
+            let numSplits = Math.ceil(gap / 2.5); 
+            let splitSize = gap / numSplits;
+            for (let j = 1; j < numSplits; j++) {
+              let forcedCut = parseFloat((lastTimestamp + (splitSize * j)).toFixed(3));
+              correctedSeconds.push(forcedCut);
+            }
+          }
+
+          // 3. ADD THE REAL AUDIO BEAT
+          correctedSeconds.push(currentTimestamp);
+          lastTimestamp = currentTimestamp;
+        }
+
+      let lastPadTimestamp = correctedSeconds.length > 0 ? correctedSeconds[correctedSeconds.length - 1] : 0.0;
+      while (correctedSeconds.length < 100) {  
+        lastPadTimestamp = parseFloat((lastPadTimestamp + 2.5).toFixed(3));
+        correctedSeconds.push(lastPadTimestamp);
+      }
+
+      const uniqueSeconds = [...new Set(correctedSeconds)].sort((a, b) => a - b);
+
+      // 🛑 5. THE SYNC MATH
+      // The wipe is now 24 frames long, so we shift an extra 40 frames 
+      // to hit your target of being exactly 64 frames early! (24 + 40 = 64)
+      const EXTRA_SHIFT = 40; 
+      const beatFrames = uniqueSeconds.map(s => Math.round(s * fps) - EXTRA_SHIFT);
+
       const beatsTsContent = `// AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 export const beatFrames = ${JSON.stringify(beatFrames, null, 2)};
 `;
       fs.writeFileSync('./src/beats.ts', beatsTsContent);
-      console.log(`Success: Generated beats.ts with ${beatFrames.length} beat frames!`);
+      console.log(`\n============== MUSIC-FIRST TIMELINE CORRECTOR ==============`);
+      console.log(`✅ Success: Transition sped up. 40-frame compensation applied.`);
+      console.log(`==========================================================\n`);
 
-      // Clean up temporary files
       if (fs.existsSync(tempBeatsFile)) fs.unlinkSync(tempBeatsFile);
       if (fs.existsSync(tempEdlFile)) fs.unlinkSync(tempEdlFile);
     } else {
-      console.error('Error: Temp beats file was not created.');
+      console.error('❌ Error: Temp beats file was not created.');
     }
   } catch (error) {
-    console.error('Error running beat detection script:', error);
+    console.error('❌ Error running beat detection script:', error);
   }
 } else {
   console.warn("⚠️ Warning: No audio file found in public/ directory. Skipping beat detection.");

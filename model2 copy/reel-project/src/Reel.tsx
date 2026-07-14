@@ -1,96 +1,144 @@
 // src/Reel.tsx
-import { AbsoluteFill, useCurrentFrame, interpolate, staticFile, Series, getInputProps, Easing, Audio } from 'remotion';
-import { IMAGES, SLIDE_DURATION_FPS, AUDIO_SRC } from './data';
-import { processImagesToFrames } from './layout';
-import { beatFrames } from './beats';
+import {
+  AbsoluteFill,
+  useCurrentFrame,
+  interpolate,
+  staticFile,
+  Series,
+  Easing,
+  Audio,
+  useVideoConfig,
+} from 'remotion';
+import { AUDIO_SRC, EVENT_NAME } from './data';
+import { LayoutFrame } from './layout';
 
-const processedScenes = processImagesToFrames(IMAGES);
+// ─────────────────────────────────────────────────────────────
+// Shared constants — must match main.tsx
+// ─────────────────────────────────────────────────────────────
+const FPS = 24;
+const MIN_SLIDE_FRAMES = 2 * FPS;   // 2s minimum visible time per scene
+const MAX_SLIDE_FRAMES = 3 * FPS;   // 3s maximum visible time per scene
+const TRANSITION_OVERLAP = 24;       // 1s cross-fade overlap between scenes
 
-const AnimatedScene = ({ scene, index, duration }: { scene: any, index: number, duration: number }) => {
-  const frame = useCurrentFrame(); 
-  const { eventTitle } = getInputProps();
+// ─────────────────────────────────────────────────────────────
+// Props
+// ─────────────────────────────────────────────────────────────
+export interface ReelProps {
+  beatFrames: number[];
+  scenes: LayoutFrame[];
+}
 
-  // 1. STAR WARS PANNING: Very slow, continuous zoom
-  const driftScale = interpolate(frame, [0, duration], [1.15, 1.02], { extrapolateRight: 'clamp' });
+// ─────────────────────────────────────────────────────────────
+// Single animated scene
+// ─────────────────────────────────────────────────────────────
+const AnimatedScene = ({
+  scene,
+  index,
+  duration,
+  isFirst,
+}: {
+  scene: LayoutFrame;
+  index: number;
+  duration: number;
+  isFirst: boolean;
+}) => {
+  const frame = useCurrentFrame();
 
-  // 2. THE SMOOTH WIPE ENGINE (36 frames = 1.5 seconds transition)
-  const wipeProgress = interpolate(frame, [0, 36], [0, 100], { 
-    easing: Easing.inOut(Easing.cubic), 
-    extrapolateRight: 'clamp' 
+  // Slow Ken-Burns zoom across the whole scene duration
+  const driftScale = interpolate(frame, [0, duration], [1.15, 1.02], {
+    extrapolateRight: 'clamp',
   });
-  
-  // 3. WIPE VARIETY LOGIC
+
+  // Wipe-in transition over TRANSITION_OVERLAP frames
+  const wipeProgress = interpolate(frame, [0, TRANSITION_OVERLAP], [0, 100], {
+    easing: Easing.inOut(Easing.cubic),
+    extrapolateRight: 'clamp',
+  });
+
   const inv = 100 - wipeProgress;
-  const half = 50 - (wipeProgress / 2);
-  
+  const half = 50 - wipeProgress / 2;
+
   let clipPathStyle = '';
-  if (index === 0) {
-    clipPathStyle = `circle(${wipeProgress}% at 50% 50%)`; // Scene 1: The Classic Iris Open
+  if (isFirst) {
+    clipPathStyle = `circle(${wipeProgress}% at 50% 50%)`;
   } else {
     const wipeTypes = [
-      `inset(0 ${half}% 0 ${half}%)`, // Vertical Barn Doors
-      `inset(0 ${inv}% 0 0)`,         // Sweep Left to Right
-      `inset(0 0 ${inv}% 0)`,         // Sweep Top to Bottom
-      `inset(${half}% 0 ${half}% 0)`, // Horizontal Barn Doors
-      `inset(0 0 0 ${inv}%)`,         // Sweep Right to Left
-      `inset(${inv}% 0 0 0)`          // Sweep Bottom to Top
+      `inset(0 ${half}% 0 ${half}%)`,
+      `inset(0 ${inv}% 0 0)`,
+      `inset(0 0 ${inv}% 0)`,
+      `inset(${half}% 0 ${half}% 0)`,
+      `inset(0 0 0 ${inv}%)`,
+      `inset(${inv}% 0 0 0)`,
     ];
     clipPathStyle = wipeTypes[(index - 1) % wipeTypes.length];
   }
 
   return (
     <AbsoluteFill style={{ transform: `scale(${driftScale})`, clipPath: clipPathStyle }}>
-      
-      {/* 1. THE CLEAN INTRO CARD (No more flying 3D text) */}
+
+      {/* ── 1. INTRO TITLE CARD — shown only on first scene ── */}
       {scene.type === 'intro' && (
         <AbsoluteFill>
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <img src={staticFile(scene.img1.src)} style={{ flex: 1, objectFit: 'cover' }} />
             <img src={staticFile(scene.img2.src)} style={{ flex: 1, objectFit: 'cover' }} />
           </div>
-          <AbsoluteFill style={{ background: 'radial-gradient(circle, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.85) 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <h1 style={{ 
-              color: 'white', 
-              fontSize: 100, 
-              textAlign: 'center', 
-              margin: '0 40px', 
-              fontWeight: 900, 
-              textTransform: 'uppercase',
-              letterSpacing: '4px',
-              textShadow: '0 8px 32px rgba(0,0,0,0.8)',
-              // Very slow, premium cinematic scale-in
-              transform: `scale(${interpolate(frame, [0, duration], [0.95, 1.05], { extrapolateRight: 'clamp' })})`
-            }}>
-              {eventTitle || "MY MEMORIES"}
-            </h1>
-          </AbsoluteFill>
+          {isFirst && (
+            <AbsoluteFill
+              style={{
+                background: 'radial-gradient(circle, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.85) 100%)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <h1
+                style={{
+                  color: 'white',
+                  fontSize: 100,
+                  textAlign: 'center',
+                  margin: '0 40px',
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  letterSpacing: '4px',
+                  textShadow: '0 8px 32px rgba(0,0,0,0.8)',
+                  transform: `scale(${interpolate(frame, [0, duration], [0.95, 1.05], {
+                    extrapolateRight: 'clamp',
+                  })})`,
+                }}
+              >
+                {EVENT_NAME || 'MY MEMORIES'}
+              </h1>
+            </AbsoluteFill>
+          )}
         </AbsoluteFill>
       )}
 
-      {/* 2. COLLAGE LAYOUT */}
+      {/* ── 2. COLLAGE ── */}
       {scene.type === 'collage' && (
         <AbsoluteFill style={{ backgroundColor: '#000' }}>
-          
-          {/* BACKGROUND LAYER: Unified blur that fills the empty space at the top and bottom */}
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', position: 'absolute', opacity: 0.8 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              width: '100%',
+              position: 'absolute',
+              opacity: 0.8,
+            }}
+          >
             <img src={staticFile(scene.img1.src)} style={{ flex: 1, objectFit: 'cover', filter: 'blur(45px)', transform: 'scale(1.2)' }} />
             <img src={staticFile(scene.img2.src)} style={{ flex: 1, objectFit: 'cover', filter: 'blur(45px)', transform: 'scale(1.2)' }} />
           </div>
-
-          {/* FOREGROUND LAYER: The photos grouped together directly in the center */}
           <AbsoluteFill style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <img src={staticFile(scene.img1.src)} style={{ width: '100%', height: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
-            
-            {/* A tiny cinematic black line to cleanly separate the two photos */}
-            <div style={{ height: '4px', width: '100%', backgroundColor: '#000' }} /> 
-            
+            <div style={{ height: '4px', width: '100%', backgroundColor: '#000' }} />
             <img src={staticFile(scene.img2.src)} style={{ width: '100%', height: 'auto', boxShadow: '0 -10px 30px rgba(0,0,0,0.5)' }} />
           </AbsoluteFill>
-          
         </AbsoluteFill>
       )}
 
-      {/* 3. BLURRED BACKGROUND LAYOUT */}
+      {/* ── 3. BLURRED BACKGROUND ── */}
       {scene.type === 'blurred_bg' && (
         <AbsoluteFill>
           <img src={staticFile(scene.img.src)} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(40px)', transform: 'scale(1.2)' }} />
@@ -98,7 +146,7 @@ const AnimatedScene = ({ scene, index, duration }: { scene: any, index: number, 
         </AbsoluteFill>
       )}
 
-      {/* 4. FIT PORTRAIT LAYOUT */}
+      {/* ── 4. FIT PORTRAIT ── */}
       {scene.type === 'fit_portrait' && (
         <AbsoluteFill style={{ backgroundColor: '#000' }}>
           <img src={staticFile(scene.img.src)} style={{ height: '100%', width: '100%', objectFit: 'cover' }} />
@@ -109,24 +157,58 @@ const AnimatedScene = ({ scene, index, duration }: { scene: any, index: number, 
   );
 };
 
-export const ReelComposition = () => {
+// ─────────────────────────────────────────────────────────────
+// Main composition
+// ─────────────────────────────────────────────────────────────
+export const ReelComposition = ({ beatFrames, scenes }: ReelProps) => {
+  const { durationInFrames } = useVideoConfig();
+
+  // Cap to whichever array is smaller — safety guard
+  const count = Math.min(scenes.length, beatFrames.length);
+  const activeScenes = scenes.slice(0, count);
+  const activeBeatFrames = beatFrames.slice(0, count);
+
+  // Build per-scene durations with clamping applied HERE (not in main.tsx alone)
+  // so that the Series layout and the composition length are always in sync.
+  //
+  // "visible gap" = clamped to [2s, 3s]
+  // Non-last scenes: visibleGap + TRANSITION_OVERLAP (so the wipe-in renders)
+  // Last scene: just visibleGap (nothing follows)
+  const sceneDurations = activeScenes.map((_, i) => {
+    const isLast = i === count - 1;
+    const rawGap = i === 0
+      ? activeBeatFrames[0]
+      : activeBeatFrames[i] - activeBeatFrames[i - 1];
+    const visibleGap = Math.max(MIN_SLIDE_FRAMES, Math.min(MAX_SLIDE_FRAMES, rawGap));
+    return isLast ? visibleGap : visibleGap + TRANSITION_OVERLAP;
+  });
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      {AUDIO_SRC && <Audio src={staticFile(AUDIO_SRC)} />}
+      {/* Audio is trimmed to the exact composition length (durationInFrames) */}
+      {AUDIO_SRC && (
+        <Audio
+          src={staticFile(AUDIO_SRC)}
+          endAt={durationInFrames}
+        />
+      )}
       <Series>
-        {processedScenes.map((scene, i) => {
+        {activeScenes.map((scene, i) => {
           const isFirst = i === 0;
-          const duration = isFirst 
-            ? beatFrames[0] + 36 
-            : beatFrames[i] - beatFrames[i-1] + 36;
-          
+          const duration = sceneDurations[i];
+
           return (
-            <Series.Sequence 
-              key={i} 
+            <Series.Sequence
+              key={i}
               durationInFrames={duration}
-              offset={isFirst ? 0 : -36} 
+              offset={isFirst ? 0 : -TRANSITION_OVERLAP}
             >
-              <AnimatedScene scene={scene} index={i} duration={duration} />
+              <AnimatedScene
+                scene={scene}
+                index={i}
+                duration={duration}
+                isFirst={isFirst}
+              />
             </Series.Sequence>
           );
         })}

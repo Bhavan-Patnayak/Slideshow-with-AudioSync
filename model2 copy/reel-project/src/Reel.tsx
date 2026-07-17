@@ -1,4 +1,3 @@
-// src/Reel.tsx
 import {
   AbsoluteFill,
   useCurrentFrame,
@@ -13,12 +12,14 @@ import { AUDIO_SRC, EVENT_NAME } from './data';
 import { LayoutFrame } from './layout';
 
 // ─────────────────────────────────────────────────────────────
-// Shared constants — must match main.tsx
+// Shared constants — must match in main.tsx and Reel.tsx!
 // ─────────────────────────────────────────────────────────────
 const FPS = 24;
 const MIN_SLIDE_FRAMES = 2 * FPS;   // 2s minimum visible time per scene
 const MAX_SLIDE_FRAMES = 3 * FPS;   // 3s maximum visible time per scene
-const TRANSITION_OVERLAP = 24;       // 1s cross-fade overlap between scenes
+const ENABLE_TRANSITIONS = true;    // Toggle ALL transitions on or off
+const WIPE_SPEED_FRAMES = 1 * FPS;  // Controls the speed of the visual wipe (1 second)
+const EARLY_START_FRAMES = 1 * FPS; // MUST be >= WIPE_SPEED_FRAMES to prevent black screen glitch
 
 // ─────────────────────────────────────────────────────────────
 // Props
@@ -49,8 +50,8 @@ const AnimatedScene = ({
     extrapolateRight: 'clamp',
   });
 
-  // Wipe-in transition over TRANSITION_OVERLAP frames
-  const wipeProgress = interpolate(frame, [0, TRANSITION_OVERLAP], [0, 100], {
+  // Wipe-in transition math (only matters if ENABLE_TRANSITIONS is true)
+  const wipeProgress = interpolate(frame, [0, WIPE_SPEED_FRAMES], [0, 100], {
     easing: Easing.inOut(Easing.cubic),
     extrapolateRight: 'clamp',
   });
@@ -59,18 +60,22 @@ const AnimatedScene = ({
   const half = 50 - wipeProgress / 2;
 
   let clipPathStyle = '';
-  if (isFirst) {
-    clipPathStyle = `circle(${wipeProgress}% at 50% 50%)`;
-  } else {
-    const wipeTypes = [
-      `inset(0 ${half}% 0 ${half}%)`,
-      `inset(0 ${inv}% 0 0)`,
-      `inset(0 0 ${inv}% 0)`,
-      `inset(${half}% 0 ${half}% 0)`,
-      `inset(0 0 0 ${inv}%)`,
-      `inset(${inv}% 0 0 0)`,
-    ];
-    clipPathStyle = wipeTypes[(index - 1) % wipeTypes.length];
+  
+  // Only apply the CSS wipe if transitions are turned on
+  if (ENABLE_TRANSITIONS) {
+    if (isFirst) {
+      clipPathStyle = `circle(${wipeProgress}% at 50% 50%)`;
+    } else {
+      const wipeTypes = [
+        `inset(0 ${half}% 0 ${half}%)`,
+        `inset(0 ${inv}% 0 0)`,
+        `inset(0 0 ${inv}% 0)`,
+        `inset(${half}% 0 ${half}% 0)`,
+        `inset(0 0 0 ${inv}%)`,
+        `inset(${inv}% 0 0 0)`,
+      ];
+      clipPathStyle = wipeTypes[(index - 1) % wipeTypes.length];
+    }
   }
 
   return (
@@ -168,19 +173,17 @@ export const ReelComposition = ({ beatFrames, scenes }: ReelProps) => {
   const activeScenes = scenes.slice(0, count);
   const activeBeatFrames = beatFrames.slice(0, count);
 
-  // Build per-scene durations with clamping applied HERE (not in main.tsx alone)
-  // so that the Series layout and the composition length are always in sync.
-  //
-  // "visible gap" = clamped to [2s, 3s]
-  // Non-last scenes: visibleGap + TRANSITION_OVERLAP (so the wipe-in renders)
-  // Last scene: just visibleGap (nothing follows)
+  // If transitions are disabled, we force the timeline overlap to 0 for hard cuts
+  const activeEarlyStart = ENABLE_TRANSITIONS ? EARLY_START_FRAMES : 0;
+
+  // Build per-scene durations with clamping applied HERE
   const sceneDurations = activeScenes.map((_, i) => {
     const isLast = i === count - 1;
     const rawGap = i === 0
       ? activeBeatFrames[0]
       : activeBeatFrames[i] - activeBeatFrames[i - 1];
     const visibleGap = Math.max(MIN_SLIDE_FRAMES, Math.min(MAX_SLIDE_FRAMES, rawGap));
-    return isLast ? visibleGap : visibleGap + TRANSITION_OVERLAP;
+    return isLast ? visibleGap : visibleGap + activeEarlyStart;
   });
 
   return (
@@ -201,7 +204,7 @@ export const ReelComposition = ({ beatFrames, scenes }: ReelProps) => {
             <Series.Sequence
               key={i}
               durationInFrames={duration}
-              offset={isFirst ? 0 : -TRANSITION_OVERLAP}
+              offset={isFirst ? 0 : -activeEarlyStart}
             >
               <AnimatedScene
                 scene={scene}
